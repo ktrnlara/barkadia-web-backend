@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
+import { getJwtSecret } from '../utils/jwtSecret';
 
 // Extend Request interface to include user
 declare global {
@@ -19,7 +20,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { userId: string };
+    const decoded = jwt.verify(token, getJwtSecret()) as { userId: string };
     const user = await User.findById(decoded.userId).select('-password');
     
     if (!user) {
@@ -54,7 +55,7 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { userId: string };
+      const decoded = jwt.verify(token, getJwtSecret()) as { userId: string };
       const user = await User.findById(decoded.userId).select('-password');
       
       if (user) {

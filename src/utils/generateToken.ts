@@ -1,11 +1,7 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
+import { getJwtSecret } from './jwtSecret';
 
 export const generateToken = (userId: string): string => {
-  const secret = process.env.JWT_SECRET || 'fallback-secret';
-  
-  return jwt.sign(
-    { userId },
-    secret,
-    { expiresIn: '7d' }
-  );
+  const expiresIn = (process.env.JWT_EXPIRE || '7d') as SignOptions['expiresIn'];
+  return jwt.sign({ userId }, getJwtSecret(), { expiresIn });
 };

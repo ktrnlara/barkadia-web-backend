@@ -5,7 +5,7 @@ import { createNotification } from '../utils/createNotification';
 
 export const createPost = async (req: Request, res: Response) => {
   try {
-    const { title, content, type, tags, price, location, eventDate } = req.body;
+    const { title, content, type, tags, price, location, eventDate, images } = req.body;
 
     const post = new Post({
       title,
@@ -15,7 +15,8 @@ export const createPost = async (req: Request, res: Response) => {
       tags: tags || [],
       price,
       location,
-      eventDate
+      eventDate,
+      images: Array.isArray(images) ? images.slice(0, 4) : [],
     });
 
     await post.save();

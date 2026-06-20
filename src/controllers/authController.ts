@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import User, { IUser } from '../models/User';
 import { generateToken } from '../utils/generateToken';
+import { buildLoginQuery, normalizeLoginIdentifier } from '../utils/loginIdentifier';
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -57,18 +58,35 @@ export const register = async (req: Request, res: Response) => {
         isVerified: user.isVerified
       }
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Registration error:', error);
+    if (error instanceof Error && error.name === 'ValidationError') {
+      const validationError = error as Error & { errors?: Record<string, { message: string }> };
+      const messages = Object.values(validationError.errors || {}).map((e) => e.message);
+      return res.status(400).json({
+        message: messages.join('. ') || 'Validation failed',
+        errors: messages,
+      });
+    }
     res.status(500).json({ message: 'Server error during registration' });
   }
 };
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, email, username, password } = req.body;
+    const loginId = normalizeLoginIdentifier(identifier ?? email ?? username);
 
-    // Find user by email
-    const user = await User.findOne({ email });
+    if (!loginId || !password) {
+      return res.status(400).json({ message: 'Email/username and password are required' });
+    }
+
+    const query = buildLoginQuery(loginId);
+    if (!query) {
+      return res.status(400).json({ message: 'Email/username and password are required' });
+    }
+
+    const user = await User.findOne(query);
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -125,13 +143,12 @@ export const getProfile = async (req: Request, res: Response) => {
 export const updateProfile = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, bio, yearLevel, department, program, branch } = req.body;
-    
+
     const user = await User.findById(req.user?._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Update fields
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (bio !== undefined) user.bio = bio;
@@ -158,12 +175,44 @@ export const updateProfile = async (req: Request, res: Response) => {
         role: user.role,
         avatar: user.avatar,
         bio: user.bio,
-        isVerified: user.isVerified
-      }
+        isVerified: user.isVerified,
+      },
     });
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
+
+    const user = await User.findById(req.user?._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ message: 'Server error updating password' });
   }
 };
 
@@ -178,23 +227,20 @@ export const createAdminUser = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Invalid role.' });
     }
 
-    // Only superadmin can assign admin or moderator roles
     if ((assignedRole === 'admin' || assignedRole === 'moderator') && requesterRole !== 'superadmin') {
       return res.status(403).json({ message: 'Only super admin can assign admin or moderator roles.' });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
+      $or: [{ email }, { username }],
     });
 
     if (existingUser) {
       return res.status(400).json({
-        message: existingUser.email === email ? 'Email already registered' : 'Username already taken'
+        message: existingUser.email === email ? 'Email already registered' : 'Username already taken',
       });
     }
 
-    // Create new user with specified role
     const user = new User({
       username,
       email,
@@ -207,7 +253,7 @@ export const createAdminUser = async (req: Request, res: Response) => {
       program,
       branch,
       role: assignedRole,
-      isVerified: true // Admin-created users are automatically verified
+      isVerified: true,
     });
 
     await user.save();
@@ -228,8 +274,8 @@ export const createAdminUser = async (req: Request, res: Response) => {
         role: user.role,
         avatar: user.avatar,
         bio: user.bio,
-        isVerified: user.isVerified
-      }
+        isVerified: user.isVerified,
+      },
     });
   } catch (error) {
     console.error('Admin user creation error:', error);

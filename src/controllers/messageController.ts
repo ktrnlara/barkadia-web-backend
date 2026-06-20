@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Conversation from '../models/Conversation';
 import Message from '../models/Message';
 import User from '../models/User';
+import { emitToConversationParticipants } from '../socket/setupSocket';
 
 const getOtherParticipant = (conversation: any, userId: string) => {
   return conversation.participants.find(
@@ -184,10 +185,18 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('message:new', {
-        conversationId: id,
-        message: payload
-      });
+      emitToConversationParticipants(
+        io,
+        id,
+        conversation.participants.map((p) => p.toString()),
+        userId.toString(),
+        {
+          id: message._id,
+          sender: message.sender,
+          content: message.content,
+          timestamp: message.createdAt,
+        }
+      );
     }
 
     res.status(201).json({
